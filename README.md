@@ -130,7 +130,7 @@ it's the only problem that is really driving me crazy, I don't think there are e
   I'll try to do it if they are features that interest me too and maybe hadn't crossed my mind yet.
 
 * There shouldn't be any bugs, besides the playhead quirks, but it's possible there might be some I haven't noticed.
-  I haven't had the chance to do really deep testing yet, so I guarantee the sequencer works at 90 - 95%, I can't guarantee it 100% just yet.
+  So I guarantee the sequencer works at 90 - 95%, I can't guarantee it 100% just yet.
 
 * Note: As a fan of *Reapertips* and a user of his theme, the plugin was designed to fit his theme. 
   If you use different themes and it ends up looking bad aesthetically, I feel sorry for you—go ahead and tweak the GUI. <3
