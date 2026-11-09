@@ -8,6 +8,8 @@ out_pin:none
 
 @init
 ext_noinit = 1;
+// Ask REAPER for the display's HiDPI scale and native-resolution drawing.
+gfx_ext_retina = 1;
 NUM_TRACKS = 16;
 leg_overlap_ms = 10;   // LEG: how long (ms) the old note overlaps the new one before its note-off
 TRACKS_PER_PAGE = 8;
@@ -6154,7 +6156,10 @@ meter_r_disp >= meter_r_peak ? (
 (cur_w != last_gfx_w || cur_h != last_gfx_h) ? (
   last_gfx_w = cur_w;
   last_gfx_h = cur_h;
-  gfx_setimgdim(1, cur_w, cur_h);
+  // JSFX image buffers are limited to 2048 pixels per dimension.
+  // Draw directly when the window is larger (e.g. a 4K display).
+  gui_use_buffer = cur_w <= 2048 && cur_h <= 2048;
+  gui_use_buffer ? gfx_setimgdim(1, cur_w, cur_h) : gfx_setimgdim(1, 0, 0);
   gui_dirty = 1;
 );
 
@@ -6319,8 +6324,8 @@ function draw_track_slots(slot_tr, slot_ry, draw_slot_a, draw_slot_b) (
   );
 );
 
-gui_dirty ? (
-  gfx_dest = 1;
+(gui_dirty || !gui_use_buffer) ? (
+  gfx_dest = gui_use_buffer ? 1 : -1;
 
   // Main background (#242424)
   gfx_r = 36 / 255.0; gfx_g = 36 / 255.0; gfx_b = 36 / 255.0;
@@ -8184,8 +8189,10 @@ while (p_i < 16) (
 
 // Blit offscreen buffer to screen (gfx_dest = -1)
 gfx_dest = -1;
-gfx_x = 0; gfx_y = 0;
-gfx_blit(1, 1, 0);
+gui_use_buffer ? (
+  gfx_x = 0; gfx_y = 0;
+  gfx_blit(1, 1, 0);
+);
 
 // Pitch and rate modulation can be drawn without rebuilding the track rows.
 // The same controls remain in the cached rows for ordinary editing and hover.
