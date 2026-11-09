@@ -1,6 +1,6 @@
 desc: REAWISE
 // Author: DR4
-// Version: 1.8
+// Version: 1.8.1
 options:no_meter
 
 in_pin:none
@@ -2365,7 +2365,7 @@ function draw_display_scale(bx, by, bw, bh, r, is_hov, scale_str) local(str_w, s
   gfx_drawstr(scale_str);
 );
 
-function draw_display_lfo_wave(bx, by, bw, bh, r, is_hov, tr_idx) local(is_dst_on, is_retrig, last_dst, is_active, is_sync, r_beats, cur_t, cur_b, raw_ph, ph_anim, am_scale, pol) (
+function draw_display_lfo_wave(bx, by, bw, bh, r, is_hov, tr_idx) local(is_dst_on, is_retrig, last_dst, is_active, is_sync, r_beats, cur_t, cur_b, raw_ph, ph_anim, am_scale, pol, rate_mod, f_hz) (
   draw_display_frame(bx, by, bw, bh, r, is_hov);
 
   get_track_color(tr_idx);
@@ -2399,13 +2399,21 @@ function draw_display_lfo_wave(bx, by, bw, bh, r, is_hov, tr_idx) local(is_dst_o
       cur_b = gfx_cur_beat;
     );
 
-    raw_ph = is_sync ? (cur_b / r_beats) : (cur_t * 4560[tr_idx]);
+    rate_mod = is_playing_transport ? 4720[tr_idx] : 0.0;
+    is_sync ? (
+      raw_ph = cur_b / r_beats + rate_mod * 0.5;
+    ) : (
+      f_hz = 4560[tr_idx];
+      f_hz <= 0 ? f_hz = 2.0;
+      rate_mod != 0.0 ? f_hz = max(0.05, f_hz * exp(rate_mod * 1.5));
+      raw_ph = cur_t * f_hz;
+    );
     ph_anim = raw_ph;
   ) : (
     ph_anim = 0.0;
   );
 
-  am_scale = is_dst_on ? (min(100, max(0, 4620[tr_idx])) / 100.0) : 1.0;
+  am_scale = is_dst_on ? (min(100, max(0, 4620[tr_idx] + (is_playing_transport ? 4840[tr_idx] * 100.0 : 0))) / 100.0) : 1.0;
   pol = 4760[tr_idx];
 
   draw_lfo_wave_icon(4500[tr_idx], bx, by, bw, bh, scale_font, ph_anim, am_scale, pol);
@@ -4117,6 +4125,19 @@ edit_active > 0 ? (
 now_time = time_precise();
 is_playing_transport = play_state & 1;
 gfx_cur_beat = play_position * (tempo / 60.0);
+// Refresh the cached top bar when the effective amount changes.
+gui_lfo_amount = floor(min(100, max(0, 4620[lfo_cur_tr] + (is_playing_transport ? 4840[lfo_cur_tr] * 100.0 : 0))) + 0.5);
+(gui_lfo_amount != last_gui_lfo_amount || lfo_cur_tr != last_gui_lfo_amount_tr) ? gui_dirty = 1;
+last_gui_lfo_amount = gui_lfo_amount;
+last_gui_lfo_amount_tr = lfo_cur_tr;
+// In frequency mode the incoming LFO changes the effective rate in Hz.
+gui_lfo_rate = 4560[lfo_cur_tr];
+(is_playing_transport && 4720[lfo_cur_tr] != 0.0) ? (
+  gui_lfo_rate = max(0.05, gui_lfo_rate * exp(4720[lfo_cur_tr] * 1.5));
+);
+gui_lfo_rate_display = floor(gui_lfo_rate * 100 + 0.5);
+(!4520[lfo_cur_tr] && gui_lfo_rate_display != last_gui_lfo_rate_display) ? gui_dirty = 1;
+last_gui_lfo_rate_display = gui_lfo_rate_display;
 
 // Floating menus geometry definitions
 pad_y_sh = max(3, H(4));
@@ -6860,7 +6881,7 @@ is_sync_active ? (
   get_lfo_sync_str(4540[lfo_cur_tr], 4700[lfo_cur_tr]);
   strcpy(#lfo_rt_display, #lfo_s_str);
 ) : (
-  sprintf(#lfo_rt_display, "%.2f", 4560[lfo_cur_tr]);
+  sprintf(#lfo_rt_display, "%.2f", gui_lfo_rate);
 );
 draw_display_val(bx_lfo_rt, by_lfo, bw_lfo_rt, bh_lfo, W(3), lfo_rt_hov, (edit_active == 9 && edit_tr == lfo_cur_tr), 8, #lfo_rt_display, 92 / 255, 193 / 255, 254 / 255, btn_txt_y_off);
 
@@ -6903,7 +6924,7 @@ cur_lfo_dst == 67 ? (
 // 7. LFO Amount / Depth box [ 100% ]
 bw_lfo_am = bw_lfo;
 lfo_am_hov = mouse_x >= bx_lfo_am && mouse_x <= bx_lfo_am + bw_lfo_am && mouse_y >= by_lfo && mouse_y <= by_lfo + bh_lfo;
-sprintf(#lfo_am_str, "%d%%", 4620[lfo_cur_tr]);
+sprintf(#lfo_am_str, "%d%%", gui_lfo_amount);
 draw_display_val(bx_lfo_am, by_lfo, bw_lfo_am, bh_lfo, W(3), lfo_am_hov, (edit_active == 8 && edit_tr == lfo_cur_tr), 8, #lfo_am_str, 92 / 255, 193 / 255, 254 / 255, btn_txt_y_off);
 // Track page buttons (1-8 and 9-16)
 p0_active = (current_page == 0);
