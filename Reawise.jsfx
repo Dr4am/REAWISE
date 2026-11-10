@@ -139,6 +139,8 @@ function init_pattern_slot_defaults(pat_idx) local(base, si, ti) (
     base[8430 + ti]       = 0;      // Track Pan: 0% (Center)
     base[8450 + ti]       = 0;      // Slot B mode: 0=Swing, 1=Pan, 2=Gate
     base[8470 + ti]       = 0;      // Track Gate: 0% (Neutral 1.0x)
+    base[8490 + ti]       = 0;      // Pitch label, first two characters
+    base[8510 + ti]       = 0;      // Pitch label, last two characters
     ti += 1;
   );
   base[8486] = 100; // Master density
@@ -175,6 +177,8 @@ function save_pattern_to_mem(pat_idx) local(base, ti) (
     base[8430 + ti]       = 2120[ti];
     base[8450 + ti]       = 2140[ti];
     base[8470 + ti]       = 2160[ti];
+    base[8490 + ti]       = 2180[ti];
+    base[8510 + ti]       = 2200[ti];
     ti += 1;
   );
   base[8486] = master_density;
@@ -224,6 +228,8 @@ function load_pattern_from_mem(pat_idx) local(base, si, ti) (
     2120[ti] = base[8430 + ti];
     2140[ti] = base[8450 + ti];
     2160[ti] = base[8470 + ti];
+    2180[ti] = base[8490 + ti];
+    2200[ti] = base[8510 + ti];
     ti += 1;
   );
 );
@@ -1123,6 +1129,8 @@ function undo_push() local(dest_base, si, ti) (
     dest_base[8430 + ti]       = 2120[ti]; // Track Pan
     dest_base[8450 + ti]       = 2140[ti]; // Slot B mode
     dest_base[8470 + ti]       = 2160[ti]; // Track Gate
+      dest_base[8490 + ti] = 2180[ti];
+      dest_base[8510 + ti] = 2200[ti];
     ti += 1;
   );
   dest_base[8400] = euc_mode;
@@ -1188,6 +1196,8 @@ function undo_pop() local(r_dest, si, ti, src_base) (
       r_dest[8430 + ti]       = 2120[ti];
       r_dest[8450 + ti]       = 2140[ti];
       r_dest[8470 + ti]       = 2160[ti];
+      r_dest[8490 + ti] = 2180[ti];
+      r_dest[8510 + ti] = 2200[ti];
       ti += 1;
     );
     r_dest[8400] = euc_mode;
@@ -1249,6 +1259,8 @@ function undo_pop() local(r_dest, si, ti, src_base) (
       2120[ti] = src_base[8430 + ti];
       2140[ti] = src_base[8450 + ti];
       2160[ti] = src_base[8470 + ti];
+      2180[ti] = src_base[8490 + ti];
+      2200[ti] = src_base[8510 + ti];
       ti += 1;
     );
     euc_mode = src_base[8400];
@@ -1310,6 +1322,8 @@ function redo_pop() local(u_dest, si, ti, r_src) (
       u_dest[8430 + ti]       = 2120[ti];
       u_dest[8450 + ti]       = 2140[ti];
       u_dest[8470 + ti]       = 2160[ti];
+      u_dest[8490 + ti] = 2180[ti];
+      u_dest[8510 + ti] = 2200[ti];
       ti += 1;
     );
     u_dest[8400] = euc_mode;
@@ -1371,6 +1385,8 @@ function redo_pop() local(u_dest, si, ti, r_src) (
       2120[ti] = r_src[8430 + ti];
       2140[ti] = r_src[8450 + ti];
       2160[ti] = r_src[8470 + ti];
+      2180[ti] = r_src[8490 + ti];
+      2200[ti] = r_src[8510 + ti];
       ti += 1;
     );
     euc_mode = r_src[8400];
@@ -2325,12 +2341,35 @@ function draw_text_edit_box(bx, by, bw, bh, r, font_id) local(db_w, db_h, dt_x, 
   gfx_drawstr(#draw_buf);
 );
 
-function draw_display_pitch(bx, by, bw, bh, r, is_hov, is_editing, pitch) (
+// Decode a four-character packed label into the shared display string.
+function get_pitch_label(tr) local(packed, i, ch) (
+  packed = 2180[tr] + 2200[tr] * 65536;
+  #pitch_label = "";
+  i = 0;
+  while (i < 4 && packed > 0) (
+    ch = packed % 256;
+    sprintf(#label_char, "%c", ch);
+    strcat(#pitch_label, #label_char);
+    packed = floor(packed / 256);
+    i += 1;
+  );
+);
+
+function draw_display_pitch(bx, by, bw, bh, r, is_hov, is_editing, pitch, label_tr) local(label_w, label_h) (
   is_editing ? (
     draw_text_edit_box(bx, by, bw, bh, r, 9);
   ) : (
     draw_display_frame(bx, by, bw, bh, r, is_hov);
-    draw_note_name_centered(pitch, bx, by, bw, bh);
+    2180[label_tr] ? (
+      get_pitch_label(label_tr);
+      gfx_setfont(9, "Inter Light", sz_param, 0);
+      gfx_measurestr(#pitch_label, label_w, label_h);
+      get_track_color(label_tr);
+      gfx_r = cr; gfx_g = cg; gfx_b = cb;
+      gfx_x = bx + floor((bw - label_w) * 0.5);
+      gfx_y = by + floor((bh - label_h) * 0.5);
+      gfx_drawstr(#pitch_label);
+    ) : draw_note_name_centered(pitch, bx, by, bw, bh);
   );
 );
 
@@ -2686,8 +2725,12 @@ function commit_param_edit() local(
   c0, b_len, cur_semi, new_oct, next_idx, c1, c_oct,
   is_div, r_val, s_len, n_idx, found_d, ch, best_diff, d, tie_count, closest_num,
   cur_l, new_val, c_i, f_val, d_val, tr_val, diff_oct, diff_semi, step_dir, ti,
-  c_inv, r_a, r_b
+  c_inv, r_a, r_b, pitch_valid, all_digits, label_pack, label_mult, label_w, label_h
 ) (
+  edit_error = 0;
+  edit_active == 2 && strlen(#edit_buf) == 0 && edit_tr >= 0 && edit_tr < NUM_TRACKS ? (
+    2180[edit_tr] != 0 ? (undo_push(); 2180[edit_tr] = 0; 2200[edit_tr] = 0;);
+  );
   strlen(#edit_buf) > 0 && ((edit_tr >= 0 && edit_tr < NUM_TRACKS) || edit_active == 11) ? (
     undo_push();
 
@@ -2706,64 +2749,78 @@ function commit_param_edit() local(
     edit_active == 2 ? (
       c0 = str_getchar(#edit_buf, 0);
       c0 >= 'a' && c0 <= 'z' ? c0 -= 32;
-
       b_len = strlen(#edit_buf);
-
-      // Single digit (0..8) changes octave while preserving note
-      (b_len == 1 && c0 >= '0' && c0 <= '8') ? (
-        cur_semi = 1600[edit_tr] % 12;
-        new_oct = c0 - '0';
-        1600[edit_tr] = min(108, max(24, (new_oct + 1) * 12 + cur_semi));
-      ) :
-
-      // 2+ digits: parse as MIDI note number
-      (c0 >= '0' && c0 <= '9') ? (
-        match("%d", #edit_buf, val) ? (
+      all_digits = 1; c_i = 0;
+      while (c_i < b_len) (
+        ch = str_getchar(#edit_buf, c_i);
+        (ch < '0' || ch > '9') ? all_digits = 0;
+        c_i += 1;
+      );
+      pitch_valid = 0;
+      all_digits ? (
+        pitch_valid = 1;
+        b_len == 1 && c0 <= '8' ? (
+          cur_semi = 1600[edit_tr] % 12;
+          1600[edit_tr] = min(108, max(24, (c0 - '0' + 1) * 12 + cur_semi));
+        ) : (
+          match("%d", #edit_buf, val);
           1600[edit_tr] = min(108, max(24, val));
         );
       ) : (
         p_semi = -1;
         p_oct = floor(1600[edit_tr] / 12) - 1;
         next_idx = 1;
-
-        // Solfege note names
-        matchi("DO*", #edit_buf) ? ( p_semi = 0; next_idx = 2; ) :
-        matchi("RE*", #edit_buf) ? ( p_semi = 2; next_idx = 2; ) :
-        matchi("MI*", #edit_buf) ? ( p_semi = 4; next_idx = 2; ) :
-        matchi("FA*", #edit_buf) ? ( p_semi = 5; next_idx = 2; ) :
-        matchi("SOL*", #edit_buf) ? ( p_semi = 7; next_idx = 3; ) :
-        matchi("LA*", #edit_buf) ? ( p_semi = 9; next_idx = 2; ) :
-        matchi("SI*", #edit_buf) ? ( p_semi = 11; next_idx = 2; ) :
-        // Standard note names
-        c0 == 'C' ? ( p_semi = 0; next_idx = 1; ) :
-        c0 == 'D' ? ( p_semi = 2; next_idx = 1; ) :
-        c0 == 'E' ? ( p_semi = 4; next_idx = 1; ) :
-        c0 == 'F' ? ( p_semi = 5; next_idx = 1; ) :
-        c0 == 'G' ? ( p_semi = 7; next_idx = 1; ) :
-        c0 == 'A' ? ( p_semi = 9; next_idx = 1; ) :
-        c0 == 'B' ? ( p_semi = 11; next_idx = 1; ) : 0;
-
+        matchi("DO*", #edit_buf) ? (p_semi = 0; next_idx = 2;) :
+        matchi("RE*", #edit_buf) ? (p_semi = 2; next_idx = 2;) :
+        matchi("MI*", #edit_buf) ? (p_semi = 4; next_idx = 2;) :
+        matchi("FA*", #edit_buf) ? (p_semi = 5; next_idx = 2;) :
+        matchi("SOL*", #edit_buf) ? (p_semi = 7; next_idx = 3;) :
+        matchi("LA*", #edit_buf) ? (p_semi = 9; next_idx = 2;) :
+        matchi("SI*", #edit_buf) ? (p_semi = 11; next_idx = 2;) :
+        c0 == 'C' ? p_semi = 0 : c0 == 'D' ? p_semi = 2 :
+        c0 == 'E' ? p_semi = 4 : c0 == 'F' ? p_semi = 5 :
+        c0 == 'G' ? p_semi = 7 : c0 == 'A' ? p_semi = 9 :
+        c0 == 'B' ? p_semi = 11;
         p_semi >= 0 ? (
           c1 = str_getchar(#edit_buf, next_idx);
-          // Sharp (#, +, s, S, £)
           (c1 == '#' || c1 == '+' || c1 == 's' || c1 == 'S' || c1 == 163) ? (
-            p_semi = (p_semi + 1) % 12;
-            next_idx += 1;
-          ) :
-          // Flat (b, -)
-          (c1 == 'b' || c1 == '-') ? (
-            p_semi = (p_semi + 11) % 12;
-            next_idx += 1;
+            p_semi = (p_semi + 1) % 12; next_idx += 1;
+          ) : (c1 == 'b' || c1 == '-') ? (
+            p_semi = (p_semi + 11) % 12; next_idx += 1;
           );
-
-          // Octave (0..8)
-          c_oct = str_getchar(#edit_buf, next_idx);
-          (c_oct >= '0' && c_oct <= '8') ? (
-            p_oct = c_oct - '0';
+          next_idx < b_len ? (
+            c_oct = str_getchar(#edit_buf, next_idx);
+            c_oct >= '0' && c_oct <= '8' ? (p_oct = c_oct - '0'; next_idx += 1;);
           );
-
-          1600[edit_tr] = min(108, max(24, (p_oct + 1) * 12 + p_semi));
+          next_idx == b_len ? (
+            pitch_valid = 1;
+            1600[edit_tr] = min(108, max(24, (p_oct + 1) * 12 + p_semi));
+          );
         );
+      );
+      !pitch_valid ? (
+        b_len <= 4 ? (
+          label_pack = 0; label_mult = 1; c_i = 0;
+          while (c_i < b_len) (
+            ch = str_getchar(#edit_buf, c_i);
+            ch >= 'a' && ch <= 'z' ? ch -= 32;
+            label_pack += ch * label_mult; label_mult *= 256;
+            c_i += 1;
+          );
+          strcpy(#pitch_label, #edit_buf);
+          c_i = 0;
+          while (c_i < b_len) (
+            ch = str_getchar(#pitch_label, c_i);
+            ch >= 'a' && ch <= 'z' ? str_setchar(#pitch_label, c_i, ch - 32);
+            c_i += 1;
+          );
+          gfx_setfont(9, "Inter Light", sz_param, 0);
+          gfx_measurestr(#pitch_label, label_w, label_h);
+          label_w <= W(38) ? (
+            2180[edit_tr] = label_pack % 65536;
+            2200[edit_tr] = floor(label_pack / 65536);
+          ) : edit_error = 2;
+        ) : edit_error = 1;
       );
     ) :
 
@@ -3228,7 +3285,7 @@ file_is_loading = file_avail(file) > 0;
   // Save current active pattern to pattern memory before writing to disk
   save_pattern_to_mem(active_edit_pat);
 );
-file_version = 3;
+file_version = 4;
 file_var(file, file_version);
 // Global parameters
 file_var(file, euc_mode);
@@ -3324,6 +3381,15 @@ file_version >= 2 ? (
         pat_migrate += 1;
       );
     );
+    file_version < 4 ? (
+      pat_migrate = 0;
+      while (pat_migrate < 16) (
+        pat_base = PATTERN_BASE + pat_migrate * PATTERN_BLOCK_SIZE;
+        memset(pat_base + 8490, 0, 16);
+        memset(pat_base + 8510, 0, 16);
+        pat_migrate += 1;
+      );
+    );
     load_pattern_from_mem(active_edit_pat);
   );
 ) : (
@@ -3335,6 +3401,8 @@ file_version >= 2 ? (
     master_density = 100;
     master_swing = 0;
     master_len_offset = 0;
+    memset(2180, 0, 16);
+    memset(2200, 0, 16);
     save_pattern_to_mem(0);
   );
 );
@@ -4085,12 +4153,15 @@ edit_active > 0 ? (
   while (key_char > 0) (
     key_char == 13 ? ( // Enter (confirm)
       commit_param_edit();
-      edit_active = 0;
-      edit_tr = -1;
-      edit_first_key = 0;
+      !edit_error ? (
+        edit_active = 0;
+        edit_tr = -1;
+        edit_first_key = 0;
+      );
       gui_dirty = 1;
     ) :
     key_char == 8 ? ( // Backspace
+      edit_error = 0;
       edit_first_key ? (
         #edit_buf = "";
         edit_first_key = 0;
@@ -4104,12 +4175,13 @@ edit_active > 0 ? (
       );
     ) :
     (key_char >= 32 && key_char <= 255) ? (
+      edit_error = 0;
       edit_first_key ? (
         #edit_buf = "";
         edit_first_key = 0;
       );
       // Map sharp key variants ('s', 'S', '+', '£') to '#' for Pitch or Root Note
-      (edit_active == 2 || edit_active == 11) ? (
+      (edit_active == 11) ? (
         (key_char == 's' || key_char == 'S' || key_char == '+' || key_char == 163) ? (
           key_char = '#';
         );
@@ -4284,6 +4356,22 @@ last_mouse_r_down = mouse_r_down;
   kb_paint_mode = -1;
   last_painted_note = -1;
   mouse_clicked = 0;
+);
+
+mouse_middle_down = (mouse_cap & 64);
+mouse_middle_press = mouse_middle_down && !mouse_middle_was_down;
+mouse_middle_was_down = mouse_middle_down;
+
+// Right or middle click outside a menu dismisses it without selecting an item.
+(mouse_r_press || mouse_middle_press) ? (
+  lfo_sh_menu_open && !is_over_lfo_sh_m ? (lfo_sh_menu_open = 0; gui_dirty = 1;);
+  lfo_ds_menu_open && !is_over_lfo_ds_m ? (lfo_ds_menu_open = 0; lfo_ds_sub_open = -1; gui_dirty = 1;);
+  scale_menu_open && !is_over_sc_m ? (scale_menu_open = 0; scale_sub_open = -1; gui_dirty = 1;);
+  lfo_rt_menu_open && !is_over_lfo_rt_m ? (lfo_rt_menu_open = 0; gui_dirty = 1;);
+  slot_a_menu_open && !is_over_sa_m ? (slot_a_menu_open = 0; gui_dirty = 1;);
+  slot_b_menu_open && !is_over_sb_m ? (slot_b_menu_open = 0; gui_dirty = 1;);
+  master_s2_menu_open && !is_over_ms2_m ? (master_s2_menu_open = 0; gui_dirty = 1;);
+  pat_menu_open && !is_over_pat_m ? (pat_menu_open = 0; gui_dirty = 1;);
 );
 
 // In-GUI LFO waveform / polarity menu click handling
@@ -4621,9 +4709,6 @@ pat_menu_open && mouse_press ? (
     gui_dirty = 1;
   );
 );
-mouse_middle_down = (mouse_cap & 64);
-mouse_middle_press = mouse_middle_down && !mouse_middle_was_down;
-mouse_middle_was_down = mouse_middle_down;
 
 // Close and commit active text edit field on outside click
 edit_active > 0 && mouse_press ? (
@@ -4684,10 +4769,12 @@ edit_active > 0 && mouse_press ? (
   );
   !is_in_box ? (
     commit_param_edit();
-    edit_active = 0;
-    edit_tr = -1;
-    edit_step_offset = -1;
-    edit_first_key = 0;
+    !edit_error ? (
+      edit_active = 0;
+      edit_tr = -1;
+      edit_step_offset = -1;
+      edit_first_key = 0;
+    ) : mouse_clicked = 1;
     gui_dirty = 1;
   );
 );
@@ -5227,8 +5314,11 @@ mouse_middle_press ? (
       edit_active > 0 ? commit_param_edit();
       edit_active = 2; edit_tr = tr_m; edit_first_key = 1;
       #edit_buf = "";
-      format_note_name(1600[tr_m]);
-      strcpy(#edit_buf, #note_full_str);
+      2180[tr_m] ? (
+        get_pitch_label(tr_m); strcpy(#edit_buf, #pitch_label);
+      ) : (
+        format_note_name(1600[tr_m]); strcpy(#edit_buf, #note_full_str);
+      );
       gui_dirty = 1;
     );
 
@@ -5627,7 +5717,7 @@ mouse_r_press ? (
     master_s2_menu_open = 0;
     edit_active > 0 ? (
       commit_param_edit();
-      edit_active = 0; edit_tr = -1; edit_first_key = 0; gui_dirty = 1;
+      !edit_error ? (edit_active = 0; edit_tr = -1; edit_first_key = 0;); gui_dirty = 1;
     );
   );
 );
@@ -6177,6 +6267,27 @@ is_playing_transport != last_transport_play ? (
   last_transport_play = is_playing_transport;
   gui_dirty = 1;
 );
+
+// Refresh the cached bottom bar when the hovered named pitch changes under LFO.
+readout_pitch_tr = drag_mode == 1 && drag_tr >= 0 ? drag_tr : -1;
+readout_pitch_tr < 0 && m_x >= 150 && m_x <= 188 ? (
+  readout_row = floor((m_y - 52) / 44);
+  readout_row >= 0 && readout_row < TRACKS_PER_PAGE &&
+  m_y >= 52 + readout_row * 44 + 6 && m_y <= 52 + readout_row * 44 + 30 ? (
+    readout_pitch_tr = current_page * 8 + readout_row;
+  );
+);
+readout_pitch_value = -1;
+readout_pitch_tr >= 0 && 2180[readout_pitch_tr] ? (
+  readout_pitch_value = 1600[readout_pitch_tr];
+  is_playing_transport && 4600[readout_pitch_tr] == 1 ? (
+    readout_pitch_value = min(108, max(24, floor(readout_pitch_value + 4740[readout_pitch_tr] * 12.0 + 0.5)));
+    readout_pitch_value = quantize_pitch(readout_pitch_value);
+  );
+);
+(readout_pitch_value != last_readout_pitch_value || readout_pitch_tr != last_readout_pitch_tr) ? gui_dirty = 1;
+last_readout_pitch_value = readout_pitch_value;
+last_readout_pitch_tr = readout_pitch_tr;
 
 // Sum the most recent audio LFO feedback for visual master offsets.
 gui_master_len = 0; gui_master_density = 0; gui_master_swing = 0; gui_master_gate = 0;
@@ -7275,6 +7386,7 @@ gfx_line(sb_w + W(6), Y(48), rsb_x - W(6), Y(48));
 // Reset step hover state for bottom bar readout
 hov_step_tr = -1;
 hov_step_num = -1;
+hov_pitch_tr = drag_mode == 1 && drag_tr >= 0 ? drag_tr : -1;
 
 row_idx = 0;
 while (row_idx < TRACKS_PER_PAGE) (
@@ -7314,13 +7426,14 @@ while (row_idx < TRACKS_PER_PAGE) (
 
   // Pitch Box
   pitch_hov = m_x >= 150 && m_x <= 188 && m_y >= ry + 6 && m_y <= ry + 30;
+  pitch_hov && drag_mode != 1 ? hov_pitch_tr = tr;
   bx_p = X(150); bw_p = W(38); by_p = Y(ry + 6); bh_p = H(24);
   disp_pitch = 1600[tr];
   4600[tr] == 1 ? (
     disp_pitch = min(108, max(24, floor(disp_pitch + 4740[tr] * 12.0 + 0.5)));
     disp_pitch = quantize_pitch(disp_pitch);
   );
-  4600[tr] != 1 ? draw_display_pitch(bx_p, by_p, bw_p, bh_p, W(3), pitch_hov, (edit_active == 2 && edit_tr == tr), disp_pitch);
+  4600[tr] != 1 ? draw_display_pitch(bx_p, by_p, bw_p, bh_p, W(3), pitch_hov, (edit_active == 2 && edit_tr == tr), disp_pitch, tr);
   gfx_setfont(1, "Inter", sz_main, 'B');
 
   // Rate Box
@@ -8021,8 +8134,30 @@ gfx_x = floor((cur_w - rw_w) * 0.5);
 gfx_y = bot_bar_y + floor((bot_bar_h - rw_h) * 0.5);
 gfx_drawstr("REAWISE");
 
-// Step parameter readout (14px)
-hov_step_tr >= 0 ? (
+// A named pitch shows its current note while hovered or dragged.
+edit_active == 2 && edit_error ? (
+  gfx_setfont(12, "Inter", sz_readout, 'B');
+  gfx_measurestr("M", h_m_w, h_m_h);
+  gfx_x = sb_w + W(8); gfx_y = bot_bar_y + floor((bot_bar_h - h_m_h) * 0.5);
+  gfx_r = 1; gfx_g = 0.45; gfx_b = 0.35;
+  edit_error == 2 ? (
+    info_lang == 0 ? gfx_drawstr("Nome troppo largo per il display") : gfx_drawstr("Name is too wide for the display");
+  ) : (
+    info_lang == 0 ? gfx_drawstr("Nome: massimo 4 caratteri") : gfx_drawstr("Name: maximum 4 characters");
+  );
+) : hov_pitch_tr >= 0 && 2180[hov_pitch_tr] ? (
+  gfx_setfont(12, "Inter", sz_readout, 'B');
+  gfx_measurestr("M", h_m_w, h_m_h);
+  gfx_x = sb_w + W(8); gfx_y = bot_bar_y + floor((bot_bar_h - h_m_h) * 0.5);
+  gfx_r = 92/255; gfx_g = 193/255; gfx_b = 254/255; gfx_drawstr("PITCH ");
+  gfx_r = 220/255; gfx_g = 220/255; gfx_b = 220/255;
+  format_note_name(readout_pitch_value);
+  gfx_drawstr(#note_full_str);
+  gfx_r = 92/255; gfx_g = 193/255; gfx_b = 254/255; gfx_drawstr("  MIDI ");
+  gfx_r = 220/255; gfx_g = 220/255; gfx_b = 220/255;
+  sprintf(#s_val, "%d", readout_pitch_value);
+  gfx_drawstr(#s_val);
+) : hov_step_tr >= 0 ? (
   gfx_setfont(12, "Inter", sz_readout, 'B');
   gfx_measurestr("M", h_m_w, h_m_h);
   readout_y = bot_bar_y + floor((bot_bar_h - h_m_h) * 0.5);
@@ -8214,7 +8349,7 @@ while (lfo_overlay_row < TRACKS_PER_PAGE) (
       lfo_overlay_pitch = min(108, max(24, floor(1600[lfo_overlay_tr] + 4740[lfo_overlay_tr] * 12.0 + 0.5)));
       lfo_overlay_pitch = quantize_pitch(lfo_overlay_pitch);
       lfo_overlay_hov = m_x >= 150 && m_x <= 188 && m_y >= lfo_overlay_ry + 6 && m_y <= lfo_overlay_ry + 30;
-      draw_display_pitch(X(150), lfo_overlay_by, W(38), H(24), W(3), lfo_overlay_hov, (edit_active == 2 && edit_tr == lfo_overlay_tr), lfo_overlay_pitch);
+      draw_display_pitch(X(150), lfo_overlay_by, W(38), H(24), W(3), lfo_overlay_hov, (edit_active == 2 && edit_tr == lfo_overlay_tr), lfo_overlay_pitch, lfo_overlay_tr);
     ) : (
       lfo_overlay_rate = min(10, max(0, floor(1640[lfo_overlay_tr] + 4740[lfo_overlay_tr] * 3.0 + 0.5)));
       lfo_overlay_rate == 0 ? ( #lfo_overlay_sym = "/"; #lfo_overlay_num = "16"; ) :
@@ -8857,7 +8992,7 @@ while (row_idx < TRACKS_PER_PAGE) (
       sprintf(#tt_desc, "Traccia %d: Nota MIDI. Rotella: note in scala (+/-1), Click Sx + Rotella: ottave (+/-12), Trascinamento, Click rotella per digitare", tr_t + 1);
     ) : (
       #tt_title = "PITCH";
-      sprintf(#tt_desc, "Track %d: Output MIDI pitch. Wheel: scale notes (+/-1), Left-Click + Wheel: octaves (+/-12), Drag, Wheel-click to type", tr_t + 1);
+      sprintf(#tt_desc, "Track %d: Output MIDI pitch. Drag or wheel to change; wheel-click to enter a note or a name (max 4 characters)", tr_t + 1);
     );
   ) :
   m_x >= 192 && m_x <= 226 && m_y >= ry_t + 6 && m_y <= ry_t + 30 ? (
@@ -8993,7 +9128,7 @@ while (row_idx < TRACKS_PER_PAGE) (
     while (st_i < 16) (
       bx_st = screen_grid_x + st_i * box_pitch_px;
       by_st = Y(ry_t + 6);
-      mouse_x >= bx_st && mouse_x <= bx_st + box_w_px && mouse_y >= by_st && mouse_y <= by_st + box_h_px ? (
+      !is_over_sc_m && mouse_x >= bx_st && mouse_x <= bx_st + box_w_px && mouse_y >= by_st && mouse_y <= by_st + box_h_px ? (
         #tt_title = "STEP";
         tt_g_step = step_page * 16 + st_i;
         tt_s_off = tr_t * 64 + tt_g_step;
